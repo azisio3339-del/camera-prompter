@@ -452,7 +452,22 @@
     saveSettings();
   }
 
+  /* ホーム画面から起動した iOS では、表示領域の高さが実際の画面より小さく報告されることがある
+     （上の safe-area ぶん短い、キーボードを閉じたあと縮んだまま、など）。その場合はアプリの
+     高さを端末の画面サイズに合わせる。iOS の screen.width/height は向きによらず縦持ちの値を返す。 */
+  function fitApp() {
+    var app = $('#app');
+    if (S.editing) return;                           // 入力中は enterEdit で固定した寸法のまま
+    if (!(P.isIOS && P.isStandalone())) { app.style.height = ''; app.style.width = ''; return; }
+    var a = Math.min(screen.width, screen.height), b = Math.max(screen.width, screen.height);
+    var expectH = isPortrait() ? b : a;
+    var expectW = isPortrait() ? a : b;
+    app.style.height = (window.innerHeight < expectH - 1) ? expectH + 'px' : '';
+    app.style.width = (window.innerWidth < expectW - 1) ? expectW + 'px' : '';
+  }
+
   function applySettings() {
+    fitApp();
     var s = stageSize();
     var fw, fh, fx, fy;
 

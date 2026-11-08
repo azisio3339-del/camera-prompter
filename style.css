@@ -88,6 +88,7 @@ button {
 /* 原稿枠を置ける範囲。左は画面の端（＝レンズのすぐ横）まで、右は操作列の内側まで */
 #stage {
   position: absolute;
+  transform: translateZ(0);   /* 鏡像の <video>（合成レイヤー）より確実に手前に描く */
   left: 0;
   right: var(--rail-r);
   top: env(safe-area-inset-top, 0px);
@@ -106,6 +107,7 @@ button {
   background: rgba(0, 0, 0, .6);
   overflow: hidden;
   z-index: 3;
+  transform: translateZ(0);   /* 背景だけが映像の下に回り込む WebKit の合成の癖を避ける */
   touch-action: none;           /* ドラッグ移動・ピンチ拡大縮小を自前で扱う */
 }
 /* 撮影待機のときだけ触れる（録画中の誤操作を防ぐ） */
