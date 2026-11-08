@@ -106,6 +106,9 @@
       </div>
       <button id="shutter" class="shutter" type="button" aria-label="録画開始"><span></span></button>
       <div class="rail-icons">
+        <button id="btn-switch" class="icon-btn" type="button" aria-label="カメラを切り替え" hidden>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v3h3M4 13a8 8 0 0 0 14.9 3M20 19v-3h-3"></path></svg>
+        </button>
         <button id="thumb" type="button" aria-label="前回の録画"></button>
       </div>
     </div>
@@ -142,6 +145,14 @@
       <div class="pop-row"><span class="val" id="val-fontsize">22pt</span></div>
       <input id="set-fontsize" type="range" min="14" max="48" step="1" value="22">
     </div>
+  </div>
+
+  <!-- Safari で開いているときだけ出す案内。ホーム画面から起動すると全画面になる -->
+  <div id="a2hs" hidden role="status">
+    <span>ホーム画面に追加すると、URL バーなしの全画面で使えます（共有 → ホーム画面に追加）</span>
+    <button id="a2hs-close" type="button" aria-label="閉じる">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </button>
   </div>
 
   <div id="toast" hidden></div>

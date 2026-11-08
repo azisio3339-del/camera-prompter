@@ -102,6 +102,7 @@
     rafId: 0,
 
     stream: null,               // カメラ（プレビュー用）
+    mirror: true,               // 鏡像で表示・録画するか（背面カメラだけ false）
     recStream: null,            // 録画用（前面カメラのときは鏡像の canvas から作る）
     recCanvas: null,
     recDrawing: false,
@@ -189,6 +190,7 @@
       duration: DEFAULTS.duration,
       fontSize: DEFAULTS.fontSize,
       readLine: DEFAULTS.readLine,
+      deviceId: (typeof raw.deviceId === 'string') ? raw.deviceId : '',   // 前回使ったカメラ
       land: { w: DEFAULTS.land.w, h: DEFAULTS.land.h, x: DEFAULTS.land.x, y: DEFAULTS.land.y },
       port: { w: DEFAULTS.port.w, h: DEFAULTS.port.h, x: DEFAULTS.port.x, y: DEFAULTS.port.y }
     };
@@ -697,6 +699,14 @@
       w: Math.round(p.w), h: Math.round(p.h)
     };
     S.editing = true;
+
+    /* キーボードが出ると iOS はページの高さそのものを縮める。
+       そのままだと下の操作列やダイヤルが上に押し上げられて枠に重なるので、
+       アプリ全体の寸法を入力前の値で固定し、キーボードは単に下を覆うだけにする。 */
+    var app = $('#app');
+    app.style.width = app.clientWidth + 'px';
+    app.style.height = app.clientHeight + 'px';
+
     var ta = $('#frame-input');
     ta.value = S.script;
     /* iOS は 16px 未満の入力欄にフォーカスすると、user-scalable=no を無視して
@@ -706,7 +716,7 @@
     ta.style.fontSize = editFs + 'px';
     ta.style.lineHeight = Math.max(1, Math.round(editFs * LINE_RATIO)) + 'px';
     renderScreenClass();
-    applySettings();                 // 枠をキーボードの上いっぱいに広げる
+    applySettings();
     setTimeout(function () {
       try {
         ta.focus();
@@ -722,10 +732,16 @@
     S.editing = false;
     S.editRect = null;
     try { ta.blur(); } catch (e) { /* ignore */ }
+    var app = $('#app');
+    app.style.width = '';            // 固定していた寸法を戻す
+    app.style.height = '';
     renderScreenClass();
     setScript(ta.value);
-    updateOrient(true);              // キーボードが引っ込んでから向きを取り直す
     applySettings();
+    /* 向きの取り直しはすぐにはやらない。この時点ではまだキーボードが引っ込んでおらず
+       画面が縮んだままのことがあり、一瞬だけ横画面と誤判定してしまう。
+       通常は resize が来て直るが、来ない環境のために少し待ってからも見る。 */
+    setTimeout(function () { updateOrient(); applySettings(); }, 400);
   }
 
   /* ---------- 原稿枠のドラッグ移動・ピンチ拡大縮小・タップ入力 ---------- */
@@ -830,40 +846,83 @@
     S.stream = null;
   }
 
-  /* 使うのは前面カメラだけ。プレビューも録画も鏡像にそろえる */
-  function openCamera() {
+  /* つながっているカメラ（映像入力）の一覧。許可が下りる前はラベルが空のことがある */
+  function listCameras() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return Promise.resolve([]);
+    return navigator.mediaDevices.enumerateDevices()
+      .then(function (list) { return list.filter(function (d) { return d.kind === 'videoinput'; }); })
+      .catch(function () { return []; });
+  }
+
+  /* 切り替えボタンは、カメラが 2 台以上あるときだけ出す（PC の複数 Web カメラ、iPhone の前面／背面） */
+  function updateSwitchButton() {
+    listCameras().then(function (cams) {
+      var b = $('#btn-switch');
+      if (b) b.hidden = cams.length < 2;
+    });
+  }
+
+  /* 既定は前面カメラ。deviceId を指定するとそのカメラを開く（PC で Web カメラを選ぶ用）。
+     背面カメラ以外は鏡像で表示・録画する。 */
+  function openCamera(deviceId) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       var e = new Error('getUserMedia なし');
       e.name = 'NotSupportedError';
       return Promise.reject(e);
     }
     stopStream();
-    var constraints = {
-      audio: true,
-      video: {
-        facingMode: { ideal: 'user' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
-    };
-    return navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+    var video = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (deviceId) video.deviceId = { exact: deviceId };
+    else video.facingMode = { ideal: 'user' };
+
+    return navigator.mediaDevices.getUserMedia({ audio: true, video: video }).then(function (stream) {
       S.stream = stream;
+      var track = stream.getVideoTracks()[0];
+      var st = (track && track.getSettings) ? track.getSettings() : {};
+      S.mirror = st.facingMode !== 'environment';        // 背面カメラだけ反転しない
+      S.settings.deviceId = st.deviceId || deviceId || '';
+      saveSettings();
+
       var v = $('#preview');
       v.srcObject = stream;
       v.muted = true;                 // ハウリング防止（録画には音声が入る）
-      v.classList.add('is-mirror');
+      v.classList.toggle('is-mirror', S.mirror);
       var p = v.play();
       if (p && p.catch) p.catch(function () { /* 自動再生が止められても srcObject は表示される */ });
       hideCamError();
+      updateSwitchButton();
       return stream;
     });
   }
 
   function ensureCamera() {
     if (S.stream) return Promise.resolve(true);
-    return openCamera()
+    /* 前回使ったカメラがあればそれを試し、だめなら前面カメラに戻す */
+    var saved = S.settings.deviceId;
+    var first = saved ? openCamera(saved).catch(function () { return openCamera(''); }) : openCamera('');
+    return first
       .then(function () { return true; })
       .catch(function (err) { showCamError(err); return false; });
+  }
+
+  /* つながっているカメラを順に切り替える */
+  function switchCamera() {
+    if (S.screen !== 'standby') return;
+    if (S.editing) exitEdit();
+    listCameras().then(function (cams) {
+      if (cams.length < 2) { showToast('切り替えられるカメラがありません'); return; }
+      var cur = S.settings.deviceId;
+      var idx = -1;
+      for (var i = 0; i < cams.length; i++) { if (cams[i].deviceId === cur) { idx = i; break; } }
+      var nextIdx = (idx + 1) % cams.length;
+      var next = cams[nextIdx];
+      openCamera(next.deviceId).then(function () {
+        showToast(next.label || ('カメラ ' + (nextIdx + 1)));
+      }).catch(function (err) {
+        openCamera(cur || '').catch(function (e2) { showCamError(e2); });
+        showToast('カメラを切り替えられませんでした');
+      });
+    });
   }
 
   function showCamError(err) {
@@ -882,6 +941,7 @@
   function buildRecordingStream() {
     S.mirroredRecording = false;
     var v = $('#preview');
+    if (!S.mirror) return S.stream;                     // 背面カメラはそのまま録る
     if (!v.videoWidth || !v.videoHeight) return S.stream;
 
     var c = document.createElement('canvas');
@@ -1093,8 +1153,7 @@
       var c = document.createElement('canvas');
       c.width = w; c.height = h;
       var ctx = c.getContext('2d');
-      ctx.translate(w, 0);
-      ctx.scale(-1, 1);
+      if (S.mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
       ctx.drawImage(v, 0, 0, w, h);
       var t = $('#thumb');
       t.style.backgroundImage = 'url("' + c.toDataURL('image/jpeg', 0.7) + '")';
@@ -1172,7 +1231,20 @@
     $('#pop-close').addEventListener('click', closePop);
 
     /* 右列 */
+    $('#btn-switch').addEventListener('click', switchCamera);
     $('#shutter').addEventListener('click', onShutter);
+
+    /* ホーム画面に追加の案内：iOS の Safari で開いているときだけ、閉じるまで出す */
+    (function () {
+      var box = $('#a2hs');
+      if (!box) return;
+      var dismissed = store.get('prompter.a2hs.dismissed', '') === '1';
+      if (P.isIOS && !P.isStandalone() && !dismissed) box.hidden = false;
+      $('#a2hs-close').addEventListener('click', function () {
+        box.hidden = true;
+        store.set('prompter.a2hs.dismissed', '1');
+      });
+    })();
     $('#thumb').addEventListener('click', function () {
       if (!S.rec.url) return;
       setScreen('review');
