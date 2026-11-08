@@ -83,21 +83,19 @@ button {
   background: #1c1c1e;
   z-index: 0;
 }
-#preview.is-mirror { transform: scaleX(-1); }   /* 前面カメラは鏡像（録画も同じ向きで保存する） */
+/* 取得元の <video> は見せない（描画は #view）。再生は続ける必要があるので display:none にはしない */
+#preview { opacity: 0; pointer-events: none; }
 
-/* 回転中に映像の上へ重ねる静止画。普通の要素なので新しいレイアウトに即座に追従する */
-#freeze {
-  display: none;
+/* プレビュー本体。毎フレーム <video> から描き写す。普通の要素なのでレイアウトに即座に追従する */
+#view {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: #000;
+  background: #1c1c1e;
   z-index: 0;
 }
-#freeze.is-on { display: block; }
-#freeze.is-mirror { transform: scaleX(-1); }
 
 /* 原稿枠を置ける範囲。左は画面の端（＝レンズのすぐ横）まで、右は操作列の内側まで */
 #stage {

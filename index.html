@@ -22,10 +22,10 @@
 
 <div id="app" class="screen-standby">
 
-  <!-- カメラ映像は画面全体に敷く -->
+  <!-- カメラ映像の取得元。見た目は #view（canvas）に描き写して出すので、この要素自体は見えない -->
   <video id="preview" playsinline muted autoplay disablepictureinpicture></video>
-  <!-- 回転中だけ直前の 1 コマを重ねて、ネイティブ映像レイヤーが追従するまでの縮みを隠す -->
-  <canvas id="freeze" aria-hidden="true"></canvas>
+  <!-- プレビューは <video> ではなくこの canvas に描き写したものを出す（回転時の縮みを避ける） -->
+  <canvas id="view" aria-hidden="true"></canvas>
 
   <!-- 中央：原稿枠・録画後プレーヤー -->
   <div id="stage">

@@ -45,7 +45,7 @@
   var EDIT_MIN_FONT = 16;
 
   /* 画面に小さく出す版。sw.js の CACHE（prompter-vNN）と同じ番号に合わせて上げる */
-  var APP_VERSION = 'v14';
+  var APP_VERSION = 'v15';
 
   var KEY_SCRIPT = 'prompter.script.v1';
   var KEY_SETTINGS = 'prompter.settings.v1';
@@ -108,9 +108,6 @@
     stream: null,               // カメラ（プレビュー用）
     mirror: true,               // 鏡像で表示・録画するか（背面カメラだけ false）
     recStream: null,            // 録画用（前面カメラのときは鏡像の canvas から作る）
-    recCanvas: null,
-    recDrawing: false,
-    recRaf: 0,
     mirroredRecording: false,
 
     counting: false,
@@ -481,31 +478,48 @@
     lastShort = short;
   }
 
-  /* 縮んだままの表示領域を iOS に見直させる（スクロール位置と高さを一瞬だけ動かす） */
-  /* 回転のあいだ、直前の 1 コマを映像の上に重ねる。
-     <video> は iOS のネイティブレイヤーで描かれ、回転アニメーション中にページの
-     レイアウトから遅れて一瞬小さく見えることがある。キャンバスは普通の要素なので
-     新しい向きに即座に合い、その間だけ映像を隠せる。 */
-  var freezeTimer = 0;
-  function freezeVideo(ms) {
-    var v = $('#preview'), c = $('#freeze');
-    if (!S.stream || !v.videoWidth || !v.videoHeight) return;
-    try {
-      c.width = v.videoWidth;
-      c.height = v.videoHeight;
-      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-    } catch (e) { return; }
-    c.classList.toggle('is-mirror', S.mirror);
-    c.classList.add('is-on');
-    clearTimeout(freezeTimer);
-    freezeTimer = setTimeout(unfreezeVideo, ms || 900);
+  /* ---------- プレビューの描画 ----------
+     <video> は iOS ではネイティブのレイヤーで描かれ、回転アニメーション中にページより先に
+     動いて一瞬小さく見える（ページ側で後から隠しても間に合わない）。
+     そこで <video> は見えなくしておき、毎フレーム canvas（#view）に描き写したものを
+     プレビューにする。canvas は普通の要素なのでレイアウトに即座に追従する。
+     鏡像もここで掛け、録画とサムネイルも同じ canvas から取る。 */
+  var previewToken = 0;
+  function startPreviewLoop() {
+    var token = ++previewToken;
+    var v = $('#preview'), c = $('#view');
+    var ctx = c.getContext('2d');
+    var last = 0;
+    function draw() {
+      if (token !== previewToken) return;
+      if (v.videoWidth && v.videoHeight) {
+        if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
+          c.width = v.videoWidth;              // 向きが変わると映像の縦横も入れ替わる
+          c.height = v.videoHeight;
+        }
+        try {
+          if (S.mirror) ctx.setTransform(-1, 0, 0, 1, c.width, 0);
+          else ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.drawImage(v, 0, 0, c.width, c.height);
+        } catch (e) { /* 1 コマ取れなくても次へ */ }
+      }
+      schedule();
+    }
+    function schedule() {
+      if (token !== previewToken) return;
+      if (v.requestVideoFrameCallback) {
+        v.requestVideoFrameCallback(function () { draw(); });   // 映像の新しいコマごと
+      } else {
+        requestAnimationFrame(function (t) {                     // 無い環境は約 30fps
+          if (t - last >= 28) { last = t; draw(); } else schedule();
+        });
+      }
+    }
+    schedule();
   }
-  function unfreezeVideo() {
-    clearTimeout(freezeTimer);
-    freezeTimer = 0;
-    $('#freeze').classList.remove('is-on');
-  }
+  function stopPreviewLoop() { previewToken++; }
 
+  /* 縮んだままの表示領域を iOS に見直させる（スクロール位置と高さを一瞬だけ動かす） */
   function nudgeViewport() {
     try { window.scrollTo(0, 1); window.scrollTo(0, 0); } catch (e) { /* ignore */ }
     var de = document.documentElement;
@@ -916,6 +930,7 @@
   /* ---------- カメラ ---------- */
 
   function stopStream() {
+    stopPreviewLoop();
     if (!S.stream) return;
     try { S.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
     S.stream = null;
@@ -961,9 +976,9 @@
       var v = $('#preview');
       v.srcObject = stream;
       v.muted = true;                 // ハウリング防止（録画には音声が入る）
-      v.classList.toggle('is-mirror', S.mirror);
       var p = v.play();
-      if (p && p.catch) p.catch(function () { /* 自動再生が止められても srcObject は表示される */ });
+      if (p && p.catch) p.catch(function () { /* 自動再生が止められても描画ループでコマは取れる */ });
+      startPreviewLoop();
       hideCamError();
       updateSwitchButton();
       return stream;
@@ -1014,47 +1029,17 @@
 
   /* ---------- 録画用のストリーム ---------- */
 
-  /* プレビューと同じ鏡像のまま録画する。
-     MediaRecorder は映像をそのまま取るので、canvas に左右反転して描き直したものを録画する。 */
+  /* プレビューと同じ見た目（鏡像）のまま録画する。
+     プレビュー用の canvas（#view）を captureStream して、カメラの音声と合わせる。 */
   function buildRecordingStream() {
     S.mirroredRecording = false;
-    var v = $('#preview');
-    if (!S.mirror) return S.stream;                     // 背面カメラはそのまま録る
-    if (!v.videoWidth || !v.videoHeight) return S.stream;
-
-    var c = document.createElement('canvas');
-    if (typeof c.captureStream !== 'function') return S.stream;
-
-    var w = v.videoWidth, h = v.videoHeight;
-    c.width = w; c.height = h;
-    var ctx = c.getContext('2d');
-    if (!ctx) return S.stream;
-
-    S.recCanvas = c;
-    S.recDrawing = true;
-    var draw = function () {
-      if (!S.recDrawing) return;
-      try {
-        ctx.save();
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(v, 0, 0, w, h);
-        ctx.restore();
-      } catch (e) { /* 1 コマ取れなくても次へ */ }
-      S.recRaf = requestAnimationFrame(draw);
-    };
-    draw();
-
+    if (!S.mirror) return S.stream;                     // 背面カメラは元の映像をそのまま録る
+    var c = $('#view');
+    if (!c.width || !c.height || typeof c.captureStream !== 'function') return S.stream;
     var cs;
     try { cs = c.captureStream(30); } catch (e) { cs = null; }
     var vTracks = cs ? cs.getVideoTracks() : [];
-    if (!vTracks.length) {
-      S.recDrawing = false;
-      if (S.recRaf) { cancelAnimationFrame(S.recRaf); S.recRaf = 0; }
-      S.recCanvas = null;
-      return S.stream;                    // 対応していない環境では反転なしで録る
-    }
-
+    if (!vTracks.length) return S.stream;               // 対応していない環境では反転なしで録る
     var audio = S.stream ? S.stream.getAudioTracks() : [];
     S.recStream = new MediaStream(vTracks.concat(audio));
     S.mirroredRecording = true;
@@ -1062,14 +1047,11 @@
   }
 
   function stopRecordingStream() {
-    S.recDrawing = false;
-    if (S.recRaf) { cancelAnimationFrame(S.recRaf); S.recRaf = 0; }
     if (S.recStream) {
       /* canvas 側の映像トラックだけ止める（音声はカメラのものなので残す） */
       try { S.recStream.getVideoTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
       S.recStream = null;
     }
-    S.recCanvas = null;
   }
 
   /* ---------- カウントダウンと録画 ---------- */
@@ -1224,15 +1206,13 @@
   /* 直前の録画のサムネイル（プレビューの 1 コマ。アプリを閉じると消える） */
   function captureThumb() {
     try {
-      var v = $('#preview');
-      if (!v.videoWidth || !v.videoHeight) return;
+      var src = $('#view');
+      if (!src.width || !src.height) return;
       var w = 120;
-      var h = Math.max(1, Math.round(w * v.videoHeight / v.videoWidth));
+      var h = Math.max(1, Math.round(w * src.height / src.width));
       var c = document.createElement('canvas');
       c.width = w; c.height = h;
-      var ctx = c.getContext('2d');
-      if (S.mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
-      ctx.drawImage(v, 0, 0, w, h);
+      c.getContext('2d').drawImage(src, 0, 0, w, h);
       var t = $('#thumb');
       t.style.backgroundImage = 'url("' + c.toDataURL('image/jpeg', 0.7) + '")';
       t.classList.add('has-thumb');
@@ -1401,25 +1381,17 @@
 
     /* 画面の大きさが変わったら枠と行を作り直す */
     var onResize = function () {
-      if (updateOrient()) freezeVideo(900);   // 向きが変わった瞬間に直前のコマを重ねる
+      updateOrient();
       applySettings();
       if (S.popGroup) placePop();
     };
     window.addEventListener('resize', onResize);
-    /* 新しい向きの映像が届いたら（<video> の寸法が変わったら）重ねを外す */
-    $('#preview').addEventListener('resize', function () {
-      if (freezeTimer) setTimeout(unfreezeVideo, 150);
-    });
-    if (screen.orientation && screen.orientation.addEventListener) {
-      screen.orientation.addEventListener('change', function () { freezeVideo(900); });
-    }
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', function () { if (!S.editing) applySettings(); });
     }
     /* orientationchange も強制はしない。入力中に向きが変わったことにされると
        レイアウトが組み替わってしまうため、反映は入力を終えたときに行う */
     window.addEventListener('orientationchange', function () {
-      freezeVideo(900);
       setTimeout(function () { updateOrient(); applySettings(); }, 250);
     });
 
