@@ -45,7 +45,7 @@
   var EDIT_MIN_FONT = 16;
 
   /* 画面に小さく出す版。sw.js の CACHE（prompter-vNN）と同じ番号に合わせて上げる */
-  var APP_VERSION = 'v15';
+  var APP_VERSION = 'v17';
 
   var KEY_SCRIPT = 'prompter.script.v1';
   var KEY_SETTINGS = 'prompter.settings.v1';
