@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>カメラ付きプロンプター</title>
+
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#000000">
+<!-- iOS はホーム画面起動時に manifest の display / orientation を見ないため meta でも指定する -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="プロンプター">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<div id="app" class="screen-standby">
+
+  <!-- カメラ映像は画面全体に敷く -->
+  <video id="preview" playsinline muted autoplay disablepictureinpicture></video>
+
+  <!-- 中央：原稿枠・録画後プレーヤー -->
+  <div id="stage">
+
+    <!-- 録画後：録画した動画の確認 -->
+    <div id="player">
+      <video id="playback" playsinline></video>
+      <button id="play-btn" type="button" aria-label="再生">
+        <svg class="i-play" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg>
+        <svg class="i-pause" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14"></path></svg>
+      </button>
+      <div id="player-bar">
+        <span id="pb-cur">0:00</span>
+        <label class="sr-only" for="pb-seek">再生位置</label>
+        <input id="pb-seek" type="range" min="0" max="1000" value="0" step="1">
+        <span id="pb-dur">0:00</span>
+      </div>
+    </div>
+
+    <!-- 原稿枠。タップで入力、ドラッグで移動、ピンチで拡大縮小 -->
+    <div id="frame">
+      <div id="frame-clip">
+        <div id="flow">
+          <div id="pad-top"></div>
+          <div id="lines"></div>
+          <div id="pad-bottom"></div>
+        </div>
+        <label class="sr-only" for="frame-input">原稿テキスト</label>
+        <textarea id="frame-input" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      </div>
+      <p id="frame-hint">タップして原稿を入力</p>
+      <div id="marker" aria-hidden="true"></div>
+      <div id="frame-progress" aria-hidden="true"><div id="frame-progress-bar"></div></div>
+      <button id="frame-done" type="button" aria-label="入力を終える">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4.5 4.5L19 7"></path></svg>
+      </button>
+      <div id="frame-resize" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M13 4 4 13M13 9.5l-3.5 3.5"></path></svg>
+      </div>
+    </div>
+
+    <!-- 枠の下：録画中の経過時間 -->
+    <div id="frame-badges">
+      <span id="rec-badge">
+        <i aria-hidden="true"></i>
+        <b id="rec-elapsed">00:00</b>
+        <span id="rec-total">/ 1:00</span>
+      </span>
+    </div>
+
+    <!-- 時間を決めるダイヤル（iPhone カメラのズームダイヤルと同じ操作） -->
+    <div id="dial">
+      <div id="dial-ticks" aria-hidden="true"></div>
+      <div id="dial-needle" aria-hidden="true"></div>
+      <div id="dial-value" aria-hidden="true">1:00</div>
+      <label class="sr-only" for="dur-range">時間</label>
+      <input class="sr-only" id="dur-range" type="range" min="10" max="600" step="5" value="60">
+    </div>
+
+    <!-- カウントダウン -->
+    <div id="countdown" hidden aria-live="assertive"><span id="countdown-num">3</span></div>
+
+    <!-- カメラが使えないときの案内 -->
+    <div id="cam-error" hidden role="alert">
+      <h2 id="cam-error-title">カメラを使えません</h2>
+      <p id="cam-error-body"></p>
+      <button id="cam-retry" type="button">もう一度試す</button>
+    </div>
+
+  </div>
+
+  <!-- 右列：設定も操作もすべてここ。左側はレンズのすぐ横まで原稿枠に使う -->
+  <div id="rail-right">
+
+    <div class="rail-group" data-screen="standby">
+      <div class="rail-icons">
+        <button class="icon-btn" type="button" data-pop="text" aria-label="文字サイズ">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18 9 6l5 12M5.8 14h6.4M15 18l3-7 3 7M16 16h4"></path></svg>
+        </button>
+      </div>
+      <button id="shutter" class="shutter" type="button" aria-label="録画開始"><span></span></button>
+      <div class="rail-icons">
+        <button id="thumb" type="button" aria-label="前回の録画"></button>
+      </div>
+    </div>
+
+    <div class="rail-group" data-screen="recording">
+      <button id="btn-pause" class="icon-btn" type="button" aria-label="スクロールを一時停止">
+        <svg class="i-pause" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14"></path></svg>
+        <svg class="i-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg>
+      </button>
+      <button id="btn-stop" class="stop" type="button" aria-label="録画停止"><span></span></button>
+      <div class="rail-spacer" aria-hidden="true"></div>
+    </div>
+
+    <div class="rail-group" data-screen="review">
+      <button id="btn-save" class="pill-btn is-primary" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>保存</button>
+      <button id="btn-retake" class="pill-btn" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"></path></svg>撮り直す</button>
+    </div>
+
+  </div>
+
+  <!-- 設定：押したアイコンの項目だけを出す小さいパネル -->
+  <div id="pop" hidden>
+    <div class="pop-head">
+      <h2 id="pop-title">時間</h2>
+      <button id="pop-close" type="button" aria-label="閉じる">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
+
+    <div class="pop-group" data-group="text">
+      <label class="sr-only" for="set-fontsize">文字サイズ</label>
+      <div class="pop-row"><span class="val" id="val-fontsize">22pt</span></div>
+      <input id="set-fontsize" type="range" min="14" max="48" step="1" value="22">
+    </div>
+  </div>
+
+  <div id="toast" hidden></div>
+</div>
+
+<!-- 行の折り返し位置を測るための非表示要素 -->
+<div id="measure" aria-hidden="true"></div>
+
+<script src="./platform.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
