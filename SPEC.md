@@ -437,3 +437,12 @@ GitHub Pages（`https://azisio3339-del.github.io/camera-prompter/`）で配信�
   「ホーム画面に追加すると、URL バーなしの全画面で使えます」を出す。× で閉じると以後出さない。
 - ホーム画面から起動すると `display: fullscreen`（iOS では standalone）で URL バーもタブバーも出ない。
   Safari とホーム画面アプリは localStorage が別なので、原稿と設定は引き継がれない。
+
+### 15.4 更新が 1 回の再読み込みで届くようにする（2026-11-09 追記）
+
+- Service Worker はアセットをキャッシュ優先で返すため、更新直後の 1 回目は古い `app.js` で動き、2 回目の再読み込みで新しくなっていた。
+  **新しい Service Worker に入れ替わった時点（`controllerchange`）で、撮影待機中なら自動で読み直す**ようにした。
+  録画中・入力中・未保存の録画があるときは読み直さず、「新しい版があります」と出す。
+- ページ本体（`index.html`）の取得は毎回サーバーに確認する（GitHub Pages が付ける 10 分の HTTP キャッシュ対策）。
+- カメラ切替は `deviceId: { exact }` で開けないカメラがあったとき `{ ideal }` でもう一度試す。
+- `hidden` 属性が `.icon-btn { display: flex }` に負けて効いていなかったのを直した（カメラ 1 台のときに切替ボタンが出ていた）。

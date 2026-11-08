@@ -5,7 +5,7 @@
    更新するときは CACHE のバージョン番号を上げる（古いキャッシュは自動で消える）。
    ============================================================ */
 
-var CACHE = 'prompter-v8';
+var CACHE = 'prompter-v9';
 
 var ASSETS = [
   './',
@@ -50,7 +50,8 @@ self.addEventListener('fetch', function (event) {
   /* ページの読み込みはキャッシュの index.html で返す（オフライン起動用） */
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).then(function (res) {
+      /* GitHub Pages は 10 分の HTTP キャッシュを付けるので、ページだけは毎回サーバーに確認する */
+      fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(function (res) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put('./index.html', copy); });
         return res;

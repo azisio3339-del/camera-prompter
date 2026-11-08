@@ -864,7 +864,7 @@
 
   /* 既定は前面カメラ。deviceId を指定するとそのカメラを開く（PC で Web カメラを選ぶ用）。
      背面カメラ以外は鏡像で表示・録画する。 */
-  function openCamera(deviceId) {
+  function openCamera(deviceId, loose) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       var e = new Error('getUserMedia なし');
       e.name = 'NotSupportedError';
@@ -872,7 +872,7 @@
     }
     stopStream();
     var video = { width: { ideal: 1280 }, height: { ideal: 720 } };
-    if (deviceId) video.deviceId = { exact: deviceId };
+    if (deviceId) video.deviceId = loose ? { ideal: deviceId } : { exact: deviceId };
     else video.facingMode = { ideal: 'user' };
 
     return navigator.mediaDevices.getUserMedia({ audio: true, video: video }).then(function (stream) {
@@ -916,12 +916,14 @@
       for (var i = 0; i < cams.length; i++) { if (cams[i].deviceId === cur) { idx = i; break; } }
       var nextIdx = (idx + 1) % cams.length;
       var next = cams[nextIdx];
-      openCamera(next.deviceId).then(function () {
-        showToast(next.label || ('カメラ ' + (nextIdx + 1)));
-      }).catch(function (err) {
-        openCamera(cur || '').catch(function (e2) { showCamError(e2); });
-        showToast('カメラを切り替えられませんでした');
-      });
+      var name = next.label || ('カメラ ' + (nextIdx + 1) + ' / ' + cams.length);
+      openCamera(next.deviceId)
+        .catch(function () { return openCamera(next.deviceId, true); })   // exact で開けなければ ideal で
+        .then(function () { showToast(name); })
+        .catch(function (err) {
+          openCamera(cur || '').catch(function (e2) { showCamError(e2); });
+          showToast('カメラを切り替えられませんでした（' + ((err && err.name) || 'Error') + '）');
+        });
     });
   }
 
@@ -1366,8 +1368,24 @@
              location.hostname === 'localhost' ||
              location.hostname === '127.0.0.1';
     if (!ok) return;
+
+    /* 新しい版の Service Worker に入れ替わったら、安全なときにページを読み直す。
+       これがないと、更新直後の 1 回目は古いキャッシュの app.js で動いてしまい、
+       2 回目の再読み込みまで新しい版にならない。 */
+    var hadController = !!navigator.serviceWorker.controller;
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || reloaded) return;          // 初回インストールでは読み直さない
+      reloaded = true;
+      var safe = S.screen === 'standby' && !S.editing && !S.counting && !S.rec.blob;
+      if (safe) location.reload();
+      else showToast('新しい版があります。あとで再読み込みしてください');
+    });
+
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () { /* 失敗しても通常動作 */ });
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        if (reg && reg.update) reg.update().catch(function () { /* ignore */ });
+      }).catch(function () { /* 失敗しても通常動作 */ });
     });
   }
 

@@ -464,6 +464,7 @@ button {
   /* backdrop-filter は使わない：毎フレーム更新されるカメラ映像の上では重く、
      iOS でタップが拾われないことがあるため */
 }
+.icon-btn[hidden] { display: none; }   /* display:flex が hidden 属性に勝ってしまうのを防ぐ */
 .icon-btn:active { background: rgba(255, 255, 255, .3); }
 .icon-btn.is-on { background: rgba(255, 214, 10, .25); }
 
