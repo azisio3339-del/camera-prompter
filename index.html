@@ -24,6 +24,8 @@
 
   <!-- カメラ映像は画面全体に敷く -->
   <video id="preview" playsinline muted autoplay disablepictureinpicture></video>
+  <!-- 回転中だけ直前の 1 コマを重ねて、ネイティブ映像レイヤーが追従するまでの縮みを隠す -->
+  <canvas id="freeze" aria-hidden="true"></canvas>
 
   <!-- 中央：原稿枠・録画後プレーヤー -->
   <div id="stage">
@@ -82,6 +84,9 @@
       <label class="sr-only" for="dur-range">時間</label>
       <input class="sr-only" id="dur-range" type="range" min="10" max="600" step="5" value="60">
     </div>
+
+    <!-- 一時的な表示：いま動いている版（sw.js のキャッシュ名と同じ番号） -->
+    <div id="ver" aria-hidden="true"></div>
 
     <!-- カウントダウン -->
     <div id="countdown" hidden aria-live="assertive"><span id="countdown-num">3</span></div>

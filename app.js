@@ -44,6 +44,9 @@
   /* 入力中の最小文字サイズ。これ未満だと iOS がページを勝手に拡大する */
   var EDIT_MIN_FONT = 16;
 
+  /* 画面に小さく出す版。sw.js の CACHE（prompter-vNN）と同じ番号に合わせて上げる */
+  var APP_VERSION = 'v14';
+
   var KEY_SCRIPT = 'prompter.script.v1';
   var KEY_SETTINGS = 'prompter.settings.v1';
 
@@ -479,6 +482,30 @@
   }
 
   /* 縮んだままの表示領域を iOS に見直させる（スクロール位置と高さを一瞬だけ動かす） */
+  /* 回転のあいだ、直前の 1 コマを映像の上に重ねる。
+     <video> は iOS のネイティブレイヤーで描かれ、回転アニメーション中にページの
+     レイアウトから遅れて一瞬小さく見えることがある。キャンバスは普通の要素なので
+     新しい向きに即座に合い、その間だけ映像を隠せる。 */
+  var freezeTimer = 0;
+  function freezeVideo(ms) {
+    var v = $('#preview'), c = $('#freeze');
+    if (!S.stream || !v.videoWidth || !v.videoHeight) return;
+    try {
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    } catch (e) { return; }
+    c.classList.toggle('is-mirror', S.mirror);
+    c.classList.add('is-on');
+    clearTimeout(freezeTimer);
+    freezeTimer = setTimeout(unfreezeVideo, ms || 900);
+  }
+  function unfreezeVideo() {
+    clearTimeout(freezeTimer);
+    freezeTimer = 0;
+    $('#freeze').classList.remove('is-on');
+  }
+
   function nudgeViewport() {
     try { window.scrollTo(0, 1); window.scrollTo(0, 0); } catch (e) { /* ignore */ }
     var de = document.documentElement;
@@ -976,6 +1003,7 @@
   }
 
   function showCamError(err) {
+    if (S.stream && S.stream.active) return;   // 別経路ですでに開けていれば出さない（起動時の失敗が遅れて届くことがある）
     var help = P.cameraHelp(err);
     $('#cam-error-title').textContent = help.title;
     $('#cam-error-body').textContent = help.body;
@@ -1373,17 +1401,25 @@
 
     /* 画面の大きさが変わったら枠と行を作り直す */
     var onResize = function () {
-      updateOrient();                 // 入力中は何もしない（キーボードでの反転を防ぐ）
+      if (updateOrient()) freezeVideo(900);   // 向きが変わった瞬間に直前のコマを重ねる
       applySettings();
       if (S.popGroup) placePop();
     };
     window.addEventListener('resize', onResize);
+    /* 新しい向きの映像が届いたら（<video> の寸法が変わったら）重ねを外す */
+    $('#preview').addEventListener('resize', function () {
+      if (freezeTimer) setTimeout(unfreezeVideo, 150);
+    });
+    if (screen.orientation && screen.orientation.addEventListener) {
+      screen.orientation.addEventListener('change', function () { freezeVideo(900); });
+    }
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', function () { if (!S.editing) applySettings(); });
     }
     /* orientationchange も強制はしない。入力中に向きが変わったことにされると
        レイアウトが組み替わってしまうため、反映は入力を終えたときに行う */
     window.addEventListener('orientationchange', function () {
+      freezeVideo(900);
       setTimeout(function () { updateOrient(); applySettings(); }, 250);
     });
 
@@ -1453,6 +1489,8 @@
     bindUI();
     syncPop();
     renderScreenClass();
+    var ver = $('#ver');
+    if (ver) ver.textContent = APP_VERSION;
     applySettings();
     syncPauseButton();
 
