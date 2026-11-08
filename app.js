@@ -28,13 +28,13 @@
 
   var LIMITS = {
     duration: { min: 10, max: 600, step: 5 },
-    fontSize: { min: 14, max: 48, step: 1 },
+    fontSize: { min: 10, max: 48, step: 1 },
     readLine: { min: 0, max: 100, step: 1 }
   };
 
   /* 枠の位置・大きさの範囲（% ・1 刻み） */
   var GEO_LIMITS = {
-    w: { min: 10, max: 100 }, h: { min: 10, max: 100 },
+    w: { min: 4, max: 100 }, h: { min: 5, max: 100 },     // PC の広い画面でも小さくできるよう % の下限は低め
     x: { min: 0, max: 100 }, y: { min: 0, max: 100 }
   };
 
@@ -433,9 +433,13 @@
   }
 
   /* 実寸で決めた位置・大きさを % に戻して設定に反映する（ドラッグ／ピンチ用） */
+  var FRAME_MIN_PX = { w: 72, h: 40 };   // これより小さいとつまみが押せない
+
   function setFramePx(x, y, w, h) {
     var s = stageSize();
     var g = geo();
+    w = Math.max(FRAME_MIN_PX.w, w);
+    h = Math.max(FRAME_MIN_PX.h, h);
     g.w = clampGeo('w', w / s.w * 100);
     g.h = clampGeo('h', h / s.h * 100);
     var fw = s.w * g.w / 100;
@@ -745,7 +749,11 @@
     /* 向きの取り直しはすぐにはやらない。この時点ではまだキーボードが引っ込んでおらず
        画面が縮んだままのことがあり、一瞬だけ横画面と誤判定してしまう。
        通常は resize が来て直るが、来ない環境のために少し待ってからも見る。 */
-    setTimeout(function () { updateOrient(); applySettings(); }, 400);
+    setTimeout(function () {
+      try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }   // キーボード後にずれた表示位置を戻す
+      updateOrient();
+      applySettings();
+    }, 400);
   }
 
   /* ---------- 原稿枠のドラッグ移動・ピンチ拡大縮小・タップ入力 ---------- */

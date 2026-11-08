@@ -68,9 +68,7 @@ button {
 
 #app {
   position: fixed;
-  inset: 0;
-  height: 100dvh;
-  width: 100vw;
+  inset: 0;              /* 高さを 100dvh などの単位で決めず、上下左右 0 で常に画面に合わせる */
   background: #000;
   overflow: hidden;
 }
@@ -492,9 +490,11 @@ button {
 }
 #app.screen-standby .rail-group[data-screen="standby"] {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 10px;
   padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
 }
+#rg-switch { margin-top: auto; }   /* 切替とサムネイルは下に寄せる */
 #app.screen-recording .rail-group[data-screen="recording"] { display: flex; justify-content: center; gap: 28px; }
 #app.screen-review .rail-group[data-screen="review"] { display: flex; justify-content: center; gap: 14px; padding: 0 6px; }
 
@@ -696,6 +696,10 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   align-items: center;
 }
 #app[data-orient="portrait"].screen-standby .rail-group[data-screen="standby"] { padding: 0 18px; }
+/* 縦画面は 左：前回の録画、右：カメラ切替・文字サイズ（iPhone のカメラと同じ並び） */
+#app[data-orient="portrait"] #rg-thumb { order: 1; }
+#app[data-orient="portrait"] #rg-switch { order: 2; margin-top: 0; margin-left: auto; }
+#app[data-orient="portrait"] #rg-font { order: 3; }
 #app[data-orient="portrait"].screen-review .rail-group[data-screen="review"] { padding: 0 18px; }
 
 #app[data-orient="portrait"] .rail-icons { flex-direction: row; gap: 12px; }
