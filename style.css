@@ -109,69 +109,6 @@ button {
   overflow: hidden;
 }
 
-
-/* ============================================================
-   縦向き固定の UI 層（#ui）
-   iPhone のカメラと同じく、レイアウトは縦向きのまま物理的に固定し、
-   OS が横にしたぶんだけ #ui を逆回転させる。絵柄（アイコン・文字）だけ正立させる。
-   寸法（px）は JS が入れる：横向きのときは幅＝画面の高さ、高さ＝画面の幅。
-   ============================================================ */
-
-#ui {
-  position: absolute;
-  left: 0; top: 0;
-  z-index: 1;
-  overflow: hidden;
-  transform-origin: 0 0;
-  --ui-rot: 0deg;
-  --glyph-rot: 0deg;
-  --pad-top: env(safe-area-inset-top, 0px);        /* 物理的な「上」（レンズ側）の safe-area */
-  --pad-bottom: env(safe-area-inset-bottom, 0px);  /* 物理的な「下」（ホームバー側）の safe-area */
-  --rail-h: calc(118px + var(--pad-bottom));
-}
-/* 端末を左に倒した（上が左）：UI の上→画面の左、UI の下→画面の右 */
-#app.rot90 #ui {
-  --ui-rot: -90deg; --glyph-rot: 90deg;
-  --pad-top: env(safe-area-inset-left, 0px);
-  --pad-bottom: env(safe-area-inset-right, 0px);
-  transform: rotate(-90deg) translateX(-100%);
-}
-/* 端末を右に倒した（上が右） */
-#app.rot270 #ui {
-  --ui-rot: 90deg; --glyph-rot: -90deg;
-  --pad-top: env(safe-area-inset-right, 0px);
-  --pad-bottom: env(safe-area-inset-left, 0px);
-  transform: rotate(90deg) translateY(-100%);
-}
-#app.rot180 #ui {
-  --ui-rot: 180deg; --glyph-rot: 180deg;
-  --pad-top: env(safe-area-inset-bottom, 0px);
-  --pad-bottom: env(safe-area-inset-top, 0px);
-  transform: rotate(180deg) translate(-100%, -100%);
-}
-/* 表示領域が画面より短いとき（iOS ホーム画面起動で下の方が描けない状態）は safe-area の余白を取らない */
-#app.short-viewport #ui { --pad-bottom: 0px; }
-
-/* 絵柄だけ正立させる（アイコン、サムネイル、文字） */
-.icon-btn svg, #thumb, .pill-btn, #countdown span, #ver, #rec-badge,
-#pop-close svg, .pop-head h2, .pop-group .val {
-  transform: rotate(var(--glyph-rot));
-  transition: transform .25s ease;
-}
-
-/* 原稿枠の中身。箱は固定したまま中身だけ正立させる。横向きのときは幅と高さを入れ替える（JS） */
-#frame-in {
-  position: absolute;
-  left: 50%; top: 50%;
-  transform: translate(-50%, -50%) rotate(var(--glyph-rot));
-}
-
-/* 録画後の再生は OS の向きに従う層に置き、操作列が占める側だけ空ける */
-#app #player { top: env(safe-area-inset-top, 0px); bottom: calc(118px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; }
-#app.short-viewport #player { bottom: 118px; }
-#app.rot90 #player { top: 0; bottom: 0; left: env(safe-area-inset-left, 0px); right: calc(118px + env(safe-area-inset-right, 0px)); }
-#app.rot270 #player { top: 0; bottom: 0; right: env(safe-area-inset-right, 0px); left: calc(118px + env(safe-area-inset-left, 0px)); }
-
 /* ---------- 原稿枠 ---------- */
 
 #frame {
@@ -422,7 +359,7 @@ button {
   font-weight: 600;
   color: var(--yellow);
   font-variant-numeric: tabular-nums;
-  transform: rotate(var(--dial-base)) translateX(196px) rotate(calc(-1 * var(--dial-base))) rotate(var(--glyph-rot, 0deg));
+  transform: rotate(var(--dial-base)) translateX(196px) rotate(calc(-1 * var(--dial-base)));
   text-shadow: 0 1px 4px rgba(0, 0, 0, .7);
 }
 #dial.is-active #dial-value { font-size: 20px; }
@@ -470,7 +407,7 @@ button {
 #cam-error {
   position: absolute;
   left: 50%; top: 50%;
-  transform: translate(-50%, -50%) rotate(var(--glyph-rot, 0deg));
+  transform: translate(-50%, -50%);
   z-index: 2;
   width: min(100%, 420px);
   background: rgba(28, 28, 30, .94);
@@ -496,7 +433,8 @@ button {
 #player {
   display: none;
   position: absolute;
-  z-index: 0;              /* #view の上、#ui の下 */
+  inset: 0;
+  z-index: 4;
   background: #000;
 }
 #app.screen-review #player { display: block; }
@@ -736,7 +674,7 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 #toast {
   position: absolute;
   left: 50%; bottom: 18px;
-  transform: translateX(-50%) rotate(var(--glyph-rot, 0deg));
+  transform: translateX(-50%);
   z-index: 9;
   max-width: 70%;
   padding: 8px 14px;
@@ -759,11 +697,15 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
    縦横の判定がひっくり返り、入力中にレイアウトが組み替わってしまうため。
    向きは JS が #app[data-orient] に入れる。
    ============================================================ */
+#app[data-orient="portrait"] {
+  --rail-h: calc(118px + env(safe-area-inset-bottom, 0px));
+}
+
 /* 原稿枠を置ける範囲：横は画面いっぱい、下は操作列の上まで */
 #app[data-orient="portrait"] #stage {
   left: 0;
   right: 0;
-  top: var(--pad-top);
+  top: env(safe-area-inset-top, 0px);
   bottom: var(--rail-h);
 }
 
@@ -775,7 +717,7 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   bottom: 0;
   width: auto;
   height: var(--rail-h);
-  padding: 0 0 var(--pad-bottom);
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
 }
 
 #app[data-orient="portrait"] .rail-group {
@@ -809,10 +751,14 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   right: 12px;
   left: auto;
   width: 260px;
-  max-width: calc(100% - 24px);
+  max-width: calc(100vw - 24px);
 }
 #app[data-orient="portrait"] #pop.at-bottom { bottom: calc(var(--rail-h) + 10px); }
-#app[data-orient="portrait"] #pop.at-top { top: calc(10px + var(--pad-top)); }
+#app[data-orient="portrait"] #pop.at-top { top: calc(10px + env(safe-area-inset-top, 0px)); }
 
 #app[data-orient="portrait"] #player-bar { right: 16px; }
 
+/* 表示領域が画面より短いとき（iOS ホーム画面起動で下の方が描けない状態）は、
+   下の safe-area ぶんの余白を取らず、描ける範囲のいちばん下に操作列を置く */
+#app.short-viewport[data-orient="portrait"] { --rail-h: 118px; }
+#app.short-viewport[data-orient="portrait"] #rail-right { padding-bottom: 0; }
