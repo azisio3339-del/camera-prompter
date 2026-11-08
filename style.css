@@ -498,8 +498,9 @@ button {
 #app.screen-recording .rail-group[data-screen="recording"] { display: flex; justify-content: center; gap: 28px; }
 #app.screen-review .rail-group[data-screen="review"] { display: flex; justify-content: center; gap: 14px; padding: 0 6px; }
 
-/* 入力中は操作列の中身を出さない（枠と入力欄だけに集中させる） */
+/* 入力中は操作列の中身を出さず、背景も透かしてカメラ映像を見せる（黒い帯を残さない） */
 #app.editing #rail-right .rail-group { display: none; }
+#app.editing #rail-right { background: transparent; }
 
 .rail-spacer { width: 44px; height: 44px; }
 
@@ -513,6 +514,15 @@ button {
 }
 .shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--red); }
 .shutter:active { transform: scale(.96); }
+
+/* 撮影待機のシャッターは、上下（縦画面では左右）のボタン数に関係なく列の真ん中に置く */
+#app.screen-standby .rail-group[data-screen="standby"] { position: relative; }
+#shutter {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+}
+#shutter:active { transform: translate(-50%, -50%) scale(.96); }
 
 .stop {
   width: 72px; height: 72px;
@@ -627,39 +637,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .28); }
 input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none; border-radius: 50%; background: var(--yellow); }
-
-/* ---------- ホーム画面に追加の案内 ---------- */
-
-#a2hs {
-  position: absolute;
-  left: 50%;
-  top: calc(10px + env(safe-area-inset-top, 0px));
-  transform: translateX(-50%);
-  z-index: 9;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: min(92vw, 520px);
-  padding: 8px 10px 8px 14px;
-  border-radius: 12px;
-  background: rgba(28, 28, 30, .92);
-  font-size: 12px;
-  line-height: 1.5;
-}
-#a2hs[hidden] { display: none; }
-#app.editing #a2hs,
-#app.screen-recording #a2hs,
-#app.screen-review #a2hs { display: none; }
-#a2hs-close {
-  width: 30px; height: 30px;
-  border-radius: 15px;
-  background: rgba(255, 255, 255, .18);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-}
 
 /* ---------- お知らせ ---------- */
 

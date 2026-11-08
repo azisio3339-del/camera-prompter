@@ -717,13 +717,17 @@
     ta.style.lineHeight = Math.max(1, Math.round(editFs * LINE_RATIO)) + 'px';
     renderScreenClass();
     applySettings();
-    setTimeout(function () {
-      try {
-        ta.focus();
-        ta.setSelectionRange(ta.value.length, ta.value.length);
-      } catch (e) { /* ignore */ }
-      applySettings();
-    }, 0);
+    /* focus はタップの処理の中で同期的に呼ぶ。setTimeout で遅らせると iOS は
+       フォーカスだけ当ててキーボードを出さず、もう一度タップしないと出てこない。 */
+    focusScriptInput();
+  }
+
+  function focusScriptInput() {
+    var ta = $('#frame-input');
+    try {
+      ta.focus({ preventScroll: true });
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    } catch (e) { /* ignore */ }
   }
 
   function exitEdit() {
@@ -1236,17 +1240,11 @@
     $('#btn-switch').addEventListener('click', switchCamera);
     $('#shutter').addEventListener('click', onShutter);
 
-    /* ホーム画面に追加の案内：iOS の Safari で開いているときだけ、閉じるまで出す */
-    (function () {
-      var box = $('#a2hs');
-      if (!box) return;
-      var dismissed = store.get('prompter.a2hs.dismissed', '') === '1';
-      if (P.isIOS && !P.isStandalone() && !dismissed) box.hidden = false;
-      $('#a2hs-close').addEventListener('click', function () {
-        box.hidden = true;
-        store.set('prompter.a2hs.dismissed', '1');
-      });
-    })();
+    /* pointerup で focus してもキーボードが出なかった場合の保険。
+       同じタップの click でもう一度 focus する（iOS はこれをタップ操作として扱う） */
+    $('#frame').addEventListener('click', function () {
+      if (S.editing && document.activeElement !== $('#frame-input')) focusScriptInput();
+    });
     $('#thumb').addEventListener('click', function () {
       if (!S.rec.url) return;
       setScreen('review');
