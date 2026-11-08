@@ -45,7 +45,7 @@
   var EDIT_MIN_FONT = 16;
 
   /* 画面に小さく出す版。sw.js の CACHE（prompter-vNN）と同じ番号に合わせて上げる */
-  var APP_VERSION = 'v15';
+  var APP_VERSION = 'v16';
 
   var KEY_SCRIPT = 'prompter.script.v1';
   var KEY_SETTINGS = 'prompter.settings.v1';
@@ -85,7 +85,7 @@
 
   var S = {
     screen: 'standby',          // 'standby' | 'recording' | 'review'
-    orient: 'landscape',        // 'portrait' | 'landscape'（入力中は固定）
+    rot: 0,                     // OS の回転角（0 / 90 / 180 / 270）。UI はこの逆回転で縦向きに固定する
     shortViewport: false,       // iOS ホーム画面起動で表示領域が画面より短いとき
     editRect: null,             // 入力中に固定しておく枠の実寸
     relayoutRaf: 0,
@@ -161,28 +161,47 @@
     return Math.min(lim.max, Math.max(lim.min, v));
   }
 
-  /* 画面の向き。
-     キーボードが出ると画面の高さが縮んで縦横の判定がひっくり返ることがあり、
-     そのたびにレイアウトが組み替わってしまう。そこで向きは JS 側で持っておき、
-     入力中は切り替えない。CSS も @media ではなく #app[data-orient] で分ける。 */
-  function detectOrient() {
-    return window.innerHeight >= window.innerWidth ? 'portrait' : 'landscape';
+  /* ---------- 向き（縦向き固定の UI） ----------
+     iPhone のカメラと同じく、UI は縦向きのレイアウトのまま物理的に固定し、
+     OS が画面を横にしたぶんだけ #ui を逆回転させる。絵柄（アイコン・文字）だけ正立させる。
+     カメラ映像と録画後の再生は OS の向きに従う（重力に対して正立するため）。
+     入力中（キーボードが出ている間）は向きを変えない。 */
+  function osAngle() {
+    var a = null;
+    if (typeof window.orientation === 'number') a = window.orientation;   // iOS：90 = 上が左、-90 = 上が右
+    else if (screen.orientation && typeof screen.orientation.angle === 'number') a = screen.orientation.angle;
+    if (a === null) a = 0;
+    a = ((a % 360) + 360) % 360;
+    /* 角度と実際の縦横が食い違うとき（PC のウィンドウなど）は回転しない */
+    var landscape = window.innerWidth > window.innerHeight;
+    if ((a === 90 || a === 270) !== landscape) a = 0;
+    return a;
   }
 
-  function updateOrient(force) {
-    if (S.editing && !force) return false;      // 入力中（キーボードが出ている間）は固定
-    var o = detectOrient();
-    if (o === S.orient) return false;
-    S.orient = o;
-    $('#app').setAttribute('data-orient', o);
-    return true;
+  function updateRotation(force) {
+    if (S.editing && !force) return false;      // 入力中は固定
+    var a = osAngle();
+    var changed = a !== S.rot;
+    S.rot = a;
+    var ui = $('#ui');
+    var sideways = (a === 90 || a === 270);
+    ui.style.width = (sideways ? window.innerHeight : window.innerWidth) + 'px';
+    ui.style.height = (sideways ? window.innerWidth : window.innerHeight) + 'px';
+    if (changed) renderScreenClass();
+    return changed;
   }
 
-  function isPortrait() { return S.orient === 'portrait'; }
+  function isPortrait() { return true; }        // UI は常に縦向きレイアウト
 
-  /* いまの向きの枠の位置・大きさ */
-  function geo() {
-    return isPortrait() ? S.settings.port : S.settings.land;
+  /* 枠の位置・大きさ（UI は縦固定なので 1 組だけ使う） */
+  function geo() { return S.settings.port; }
+
+  /* 画面上の指の移動量 → UI（縦固定）座標の移動量 */
+  function toUI(dx, dy) {
+    if (S.rot === 90) return { x: -dy, y: dx };
+    if (S.rot === 270) return { x: dy, y: -dx };
+    if (S.rot === 180) return { x: -dx, y: -dy };
+    return { x: dx, y: dy };
   }
 
   function loadSettings() {
@@ -467,7 +486,7 @@
     var short = false;
     if (P.isIOS && P.isStandalone()) {
       var a = Math.min(screen.width, screen.height), b = Math.max(screen.width, screen.height);
-      var expectH = isPortrait() ? b : a;
+      var expectH = (S.rot === 90 || S.rot === 270) ? a : b;
       short = window.innerHeight < expectH - 1;
     }
     if (short !== S.shortViewport) {
@@ -528,6 +547,7 @@
   }
 
   function applySettings() {
+    updateRotation();
     fitApp();
     var s = stageSize();
     var fw, fh, fx, fy;
@@ -549,6 +569,12 @@
     f.style.height = fh + 'px';
     f.style.left = fx + 'px';
     f.style.top = fy + 'px';
+
+    /* 中身は正立させるので、横向きのときは中身の幅と高さを入れ替える */
+    var fin = $('#frame-in');
+    var sideways = (S.rot === 90 || S.rot === 270);
+    fin.style.width = (sideways ? fh : fw) + 'px';
+    fin.style.height = (sideways ? fw : fh) + 'px';
 
     /* 枠の下にラベルを置く。下に入らないときは枠の上に出す */
     var badges = $('#frame-badges');
@@ -624,7 +650,7 @@
         l.className = 'dial-label';
         l.textContent = fmtDuration(sec);
         l.style.transform = 'rotate(' + deg + 'deg) translateX(' + DIAL_LABEL_R +
-                            'px) rotate(' + (-deg) + 'deg)';
+                            'px) rotate(' + (-deg) + 'deg) rotate(var(--glyph-rot, 0deg))';
         frag.appendChild(l);
       }
     }
@@ -649,8 +675,8 @@
 
     dial.addEventListener('pointermove', function (e) {
       if (!drag || e.pointerId !== drag.id) return;
-      /* 横画面は上下、縦画面は左右になぞる。上／左へで時間が増える */
-      var moved = isPortrait() ? (e.clientX - drag.x) : (e.clientY - drag.y);
+      /* UI 座標での左右の移動量。左へなぞると時間が増える（画面上の向きは回転に合わせて変わる） */
+      var moved = toUI(e.clientX - drag.x, e.clientY - drag.y).x;
       dialPos = Math.min(DIAL_MAX, Math.max(0, drag.pos - moved / DIAL_PX_PER_STEP));
       setDuration(indexToDur(Math.round(dialPos)));
       renderDial();
@@ -754,6 +780,7 @@
     if (S.gesturing) cls += ' sizing';
     if (S.script.length) cls += ' has-script';
     if (S.shortViewport) cls += ' short-viewport';
+    cls += ' rot' + S.rot;
     $('#app').className = cls;
   }
 
@@ -828,7 +855,7 @@
        通常は resize が来て直るが、来ない環境のために少し待ってからも見る。 */
     setTimeout(function () {
       try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }   // キーボード後にずれた表示位置を戻す
-      updateOrient();
+      updateRotation();
       applySettings();
     }, 400);
   }
@@ -890,9 +917,21 @@
         g.moved = Math.max(g.moved, Math.hypot(dx, dy));
         if (g.moved < 6) return;                     // 小さい動きはタップ扱い
         beginGesture();
-        setFramePx(g.x0 + dx, g.y0 + dy, g.w, g.h);
+        var u = toUI(dx, dy);
+        setFramePx(g.x0 + u.x, g.y0 + u.y, g.w, g.h);
       } else if (g.mode === 'resize' && String(e.pointerId) === g.id) {
-        setFramePx(g.x0, g.y0, g.w0 + (e.clientX - g.sx), g.h0 + (e.clientY - g.sy));
+        /* つまみは利用者から見た右下にある。利用者の見た目の幅・高さに指の動きを足し、
+           UI の幅・高さに戻す。固定するのは利用者から見た左上の角 */
+        var rdx = e.clientX - g.sx, rdy = e.clientY - g.sy;
+        var side = (S.rot === 90 || S.rot === 270);
+        var iw0 = side ? g.h0 : g.w0, ih0 = side ? g.w0 : g.h0;
+        var iw = Math.max(1, iw0 + rdx), ih = Math.max(1, ih0 + rdy);
+        var nw = side ? ih : iw, nh = side ? iw : ih;
+        var nx = g.x0, ny = g.y0;
+        if (S.rot === 90) nx = g.x0 + g.w0 - nw;                       // UI の右上を固定
+        else if (S.rot === 270) ny = g.y0 + g.h0 - nh;                 // UI の左下を固定
+        else if (S.rot === 180) { nx = g.x0 + g.w0 - nw; ny = g.y0 + g.h0 - nh; }
+        setFramePx(nx, ny, nw, nh);
       } else if (g.mode === 'pinch') {
         var k = Object.keys(ptrs);
         if (k.length < 2) return;
@@ -1381,7 +1420,7 @@
 
     /* 画面の大きさが変わったら枠と行を作り直す */
     var onResize = function () {
-      updateOrient();
+      updateRotation();
       applySettings();
       if (S.popGroup) placePop();
     };
@@ -1392,7 +1431,9 @@
     /* orientationchange も強制はしない。入力中に向きが変わったことにされると
        レイアウトが組み替わってしまうため、反映は入力を終えたときに行う */
     window.addEventListener('orientationchange', function () {
-      setTimeout(function () { updateOrient(); applySettings(); }, 250);
+      updateRotation();
+      applySettings();
+      setTimeout(function () { updateRotation(); applySettings(); }, 250);
     });
 
     /* 拡大・プルリフレッシュ・長押しメニューを止める（入力欄とスライダーは除く） */
@@ -1455,8 +1496,8 @@
     S.settings = loadSettings();
     S.script = store.get(KEY_SCRIPT, '');
     dialPos = durToIndex(S.settings.duration);
-    S.orient = detectOrient();
-    $('#app').setAttribute('data-orient', S.orient);
+    S.rot = osAngle();
+    $('#app').setAttribute('data-orient', 'portrait');   // UI は常に縦向きレイアウト
 
     bindUI();
     syncPop();
