@@ -728,3 +728,8 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 #app[data-orient="portrait"] #pop.at-top { top: calc(10px + env(safe-area-inset-top, 0px)); }
 
 #app[data-orient="portrait"] #player-bar { right: 16px; }
+
+/* 表示領域が画面より短いとき（iOS ホーム画面起動で下の方が描けない状態）は、
+   下の safe-area ぶんの余白を取らず、描ける範囲のいちばん下に操作列を置く */
+#app.short-viewport[data-orient="portrait"] { --rail-h: 118px; }
+#app.short-viewport[data-orient="portrait"] #rail-right { padding-bottom: 0; }

@@ -83,6 +83,7 @@
   var S = {
     screen: 'standby',          // 'standby' | 'recording' | 'review'
     orient: 'landscape',        // 'portrait' | 'landscape'（入力中は固定）
+    shortViewport: false,       // iOS ホーム画面起動で表示領域が画面より短いとき
     editRect: null,             // 入力中に固定しておく枠の実寸
     relayoutRaf: 0,
     editing: false,             // 原稿枠に入力中
@@ -452,18 +453,37 @@
     saveSettings();
   }
 
-  /* ホーム画面から起動した iOS では、表示領域の高さが実際の画面より小さく報告されることがある
-     （上の safe-area ぶん短い、キーボードを閉じたあと縮んだまま、など）。その場合はアプリの
-     高さを端末の画面サイズに合わせる。iOS の screen.width/height は向きによらず縦持ちの値を返す。 */
+  /* ホーム画面から起動した iOS では、表示領域の高さが端末の画面より短いことがある
+     （キーボードを閉じたあとに iOS が元に戻し忘れる、など）。その外には何も描けないので、
+     アプリの高さを無理に画面に合わせるのではなく（シャッターが切れる）、
+     描ける範囲の中で操作列をいちばん下に寄せ、表示領域を戻すきっかけを与える。
+     iOS の screen.width/height は向きによらず縦持ちの値を返す。 */
+  var lastShort = null;
   function fitApp() {
     var app = $('#app');
+    app.style.height = '';
+    app.style.width = '';
     if (S.editing) return;                           // 入力中は enterEdit で固定した寸法のまま
-    if (!(P.isIOS && P.isStandalone())) { app.style.height = ''; app.style.width = ''; return; }
-    var a = Math.min(screen.width, screen.height), b = Math.max(screen.width, screen.height);
-    var expectH = isPortrait() ? b : a;
-    var expectW = isPortrait() ? a : b;
-    app.style.height = (window.innerHeight < expectH - 1) ? expectH + 'px' : '';
-    app.style.width = (window.innerWidth < expectW - 1) ? expectW + 'px' : '';
+    var short = false;
+    if (P.isIOS && P.isStandalone()) {
+      var a = Math.min(screen.width, screen.height), b = Math.max(screen.width, screen.height);
+      var expectH = isPortrait() ? b : a;
+      short = window.innerHeight < expectH - 1;
+    }
+    if (short !== S.shortViewport) {
+      S.shortViewport = short;
+      renderScreenClass();
+    }
+    if (short && lastShort !== true) nudgeViewport();
+    lastShort = short;
+  }
+
+  /* 縮んだままの表示領域を iOS に見直させる（スクロール位置と高さを一瞬だけ動かす） */
+  function nudgeViewport() {
+    try { window.scrollTo(0, 1); window.scrollTo(0, 0); } catch (e) { /* ignore */ }
+    var de = document.documentElement;
+    de.style.height = '100.1%';
+    requestAnimationFrame(function () { de.style.height = ''; });
   }
 
   function applySettings() {
@@ -692,6 +712,7 @@
     if (S.editing) cls += ' editing';
     if (S.gesturing) cls += ' sizing';
     if (S.script.length) cls += ' has-script';
+    if (S.shortViewport) cls += ' short-viewport';
     $('#app').className = cls;
   }
 
@@ -1314,6 +1335,13 @@
     ta.addEventListener('input', function () {
       store.set(KEY_SCRIPT, ta.value);      // 入力のたびに自動保存
     });
+    /* アプリ切り替えなどで iOS 側がキーボードを閉じたときも、入力終了の処理（寸法の固定解除・
+       表示領域の戻し）を必ず通す */
+    ta.addEventListener('blur', function () {
+      setTimeout(function () {
+        if (S.editing && document.activeElement !== ta) exitEdit();
+      }, 120);
+    });
     $('#frame-done').addEventListener('click', function (e) {
       e.stopPropagation();
       exitEdit();
@@ -1350,6 +1378,9 @@
       if (S.popGroup) placePop();
     };
     window.addEventListener('resize', onResize);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function () { if (!S.editing) applySettings(); });
+    }
     /* orientationchange も強制はしない。入力中に向きが変わったことにされると
        レイアウトが組み替わってしまうため、反映は入力を終えたときに行う */
     window.addEventListener('orientationchange', function () {
